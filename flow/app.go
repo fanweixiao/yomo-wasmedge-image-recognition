@@ -22,14 +22,19 @@ var (
 
 const ImageDataKey = 0x10
 
+const base64Table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+var coder = base64.NewEncoding(base64Table)
+
 var decode = func(v []byte) (interface{}, error) {
 	img64, err := y3.ToUTF8String(v)
 	if err != nil {
 		return nil, err
 	}
 
-	//fmt.Printf("img64=%v\n", img64)
-	img, err := base64.StdEncoding.DecodeString(img64)
+	fmt.Printf("img64=%v\n", img64)
+	//img, err := base64.URLEncoding.DecodeString(img64)
+	img, err := coder.DecodeString(img64)
 	if err != nil {
 		return nil, err
 	}

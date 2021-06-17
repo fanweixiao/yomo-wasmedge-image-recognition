@@ -22,6 +22,14 @@ var (
 	codec      = y3.NewCodec(0x10)
 )
 
+const base64Table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+var coder = base64.NewEncoding(base64Table)
+
+//func Base64Encode(encode_byte []byte) []byte {
+//	return []byte(coder.EncodeToString(encode_byte))
+//}
+
 func main() {
 	fmt.Println("Go: Args:", os.Args)
 	filePath := os.Args[1]
@@ -43,7 +51,9 @@ func loadImageAndSendData(stream io.Writer, filePath string) {
 
 	for {
 		// encode image.
-		img64 := base64.StdEncoding.EncodeToString(img)
+		img64 := coder.EncodeToString(img)
+
+		fmt.Printf("img64=%v\n", img64)
 		sendingBuf, _ := codec.Marshal(img64)
 
 		// end data via QUIC stream.
