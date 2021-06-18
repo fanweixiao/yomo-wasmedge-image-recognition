@@ -121,6 +121,8 @@ github.com/prometheus/procfs v0.0.0-20180725123919-05ee40e3a273/go.mod h1:c3At6R
 github.com/reactivex/rxgo/v2 v2.5.0 h1:FhPgHwX9vKdNQB2gq9EPt+EKk9QrrzoeztGbEEnZam4=
 github.com/reactivex/rxgo/v2 v2.5.0/go.mod h1:bs4fVZxcb5ZckLIOeIeVH942yunJLWDABWGbrHAW+qU=
 github.com/russross/blackfriday v1.5.2/go.mod h1:JO/DiYxRf+HjHt06OyowR9PTA263kcR/rfWxYHBV53g=
+github.com/second-state/WasmEdge-go v0.8.0 h1:MHgXk129rhMUuuS8v8FOeJJyz9jaUWF0EYLembpp1F0=
+github.com/second-state/WasmEdge-go v0.8.0/go.mod h1:Q3h79fwQs7GUSOm3ZzHXK+j4cKmCFP3SKpGfFNDtqD8=
 github.com/sergi/go-diff v1.0.0/go.mod h1:0CfEIISq7TuYL3j771MWULgwwjU+GofnZX9QAmXWZgo=
 github.com/shurcooL/component v0.0.0-20170202220835-f88ec8f54cc4/go.mod h1:XhFIlyj5a1fBNx5aJTbKoIq0mNaPvOagO+HjB3EtxrY=
 github.com/shurcooL/events v0.0.0-20181021180414-410e4ca65f48/go.mod h1:5u70Mqkb5O5cxEA8nxTsgrgLehJeAw6Oc4Ab1c/P1HM=
@@ -172,6 +174,8 @@ github.com/yomorun/y3-codec-golang v1.6.9 h1:+1sTfxfwobWviNg5RMmLlcKbcIl5ZI1fiCm
 github.com/yomorun/y3-codec-golang v1.6.9/go.mod h1:R+y8hQ/AHZ1tDzWtmspVeX7omqVWFJ42gdlXIOp35rA=
 github.com/yomorun/yomo v1.3.2 h1:6RMsEUqGKmh0hWSJxDs5rKVDJoYDYJNT570RrdOhALk=
 github.com/yomorun/yomo v1.3.2/go.mod h1:v0BzfYvC0TLeU1Tqp2H4kb2aHrvf0DtI+RRnJUfB/rE=
+github.com/yomorun/yomo v1.3.3 h1:PJM7eAnMLd7Cc7wNVczec4xe7lsT8YNJ9+DMeqIToos=
+github.com/yomorun/yomo v1.3.3/go.mod h1:v0BzfYvC0TLeU1Tqp2H4kb2aHrvf0DtI+RRnJUfB/rE=
 go.opencensus.io v0.18.0/go.mod h1:vKdFvxhtzZ9onBp9VKHK8z/sRpBMnKAsufL7wlDrCOA=
 go.uber.org/goleak v1.1.10/go.mod h1:8a7PlsEVH3e/a/GLqe5IIrQx6GzcnRmZEufDUTk4A7A=
 go4.org v0.0.0-20180809161055-417644f6feb5/go.mod h1:MkTOUMDaeVYJUOUsaDXIhWPZYa1yOyC1qaOBpL57BhE=
