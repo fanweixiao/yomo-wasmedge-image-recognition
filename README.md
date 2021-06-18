@@ -4,7 +4,26 @@
 
 ## Getting Started
 
-### 1. Zipper
+### 1. Install CLI
+
+```
+$ go install github.com/yomorun/cli/yomo@latest
+```
+
+#### Verify if the CLI was installed successfully
+
+```
+$ yomo -v
+
+YoMo CLI version: v0.0.1
+
+```
+
+You can also download the yomo file: [yomo](https://github.com/yomorun/yomo-app-image-recognition-example/releases/download/v0.1.0/yomo)
+
+
+
+### 2. Zipper
 
 #### Run
 
@@ -14,7 +33,7 @@ yomo serve -c ./zipper/workflow.yaml
 
 
 
-### 2. Flow
+### 3. Flow
 
 #### Run
 
@@ -24,9 +43,9 @@ go get -u github.com/second-state/WasmEdge-go/wasmedge
 go run --tags tensorflow app.go
 ```
 
+Should be run in LINUX.
 
-
-### 3.Source
+### 4.Source
 
 #### Run
 
@@ -34,5 +53,5 @@ go run --tags tensorflow app.go
 go run ./source/main.go ./source/hot-dog.mp4
 ```
 
-
+download the mp4 file: [hot-dog.mp4](https://github.com/yomorun/yomo-app-image-recognition-example/releases/download/v0.1.0/hot-dog.mp4) , and save to source directory.
 
