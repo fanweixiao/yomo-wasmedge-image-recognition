@@ -6,49 +6,42 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"os"
-	"strconv"
-
-	"github.com/yomorun/y3-codec-golang"
+	"sync"
 
 	"github.com/yomorun/yomo/pkg/client"
+
+	"github.com/yomorun/y3-codec-golang"
 	"github.com/yomorun/yomo/pkg/rx"
 )
 
 var (
-	zipperHost = getEnvString("YOMO_ZIPPER_HOST", "localhost")
-	zipperPort = getEnvInt("YOMO_ZIPPER_Port", 9000)
+	m   = map[string][]ImageData{}
+	mux sync.Mutex
+
+	coder64 = base64.NewEncoding("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
 )
 
-const ImageDataKey = 0x10
+const (
+	ImageDataKey = 0x10
+)
 
-const base64Table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+type ImageData struct {
+	ImageID       string `y3:"0x12"`
+	ImageHash     string `y3:"0x13"`
+	PacketCount   int64  `y3:"0x14"`
+	PacketId      int64  `y3:"0x15"`
+	PacketContent string `y3:"0x17"`
+}
 
-var coder = base64.NewEncoding(base64Table)
-
-var decode = func(v []byte) (interface{}, error) {
-	img64, err := y3.ToUTF8String(v)
+func main() {
+	cli, err := client.NewServerless("image-recognition").Connect("localhost", 9000)
 	if err != nil {
-		return nil, err
+		log.Print("❌ Connect to zipper failure: ", err)
+		return
 	}
 
-	fmt.Printf("img64=%v\n", img64)
-	//img, err := base64.URLEncoding.DecodeString(img64)
-	img, err := coder.DecodeString(img64)
-	if err != nil {
-		return nil, err
-	}
-
-	//create file
-	err = ioutil.WriteFile("./temp.jpg", img, 0644)
-	if err != nil {
-		return nil, err
-	}
-
-	hash := genSha1(img)
-	log.Printf("✅ received image hash %v, img64_size=%d \n", hash, len(img64))
-
-	return hash, nil
+	defer cli.Close()
+	cli.Pipe(Handler)
 }
 
 func Handler(rxstream rx.RxStream) rx.RxStream {
@@ -60,40 +53,60 @@ func Handler(rxstream rx.RxStream) rx.RxStream {
 	return stream
 }
 
-func getEnvInt(key string, defaultValue int) int {
-	value := os.Getenv(key)
-	if len(value) != 0 {
-		result, err := strconv.Atoi(value)
+var decode = func(v []byte) (interface{}, error) {
+	mux.Lock()
+	defer mux.Unlock()
+
+	// parse ImageData
+	var mold ImageData
+	err := y3.ToObject(v, &mold)
+	if err != nil {
+		return nil, err
+	}
+
+	// gather packages
+	dataArray, ok := m[mold.ImageID]
+	if ok == false {
+		dataArray = make([]ImageData, 0)
+		dataArray = append(dataArray, mold)
+		m[mold.ImageID] = dataArray
+	} else {
+		dataArray = append(dataArray, mold)
+		m[mold.ImageID] = dataArray
+	}
+
+	packetCount := dataArray[0].PacketCount
+
+	if int64(len(dataArray)) == packetCount {
+		groupId := dataArray[0].ImageID
+		imageHash := dataArray[0].ImageHash
+
+		// combine packages
+		img64 := ""
+		for _, item := range dataArray {
+			img64 += item.PacketContent
+		}
+		delete(m, groupId)
+
+		// restore image
+		img, err := coder64.DecodeString(img64)
+
+		//create file
+		err = ioutil.WriteFile("./temp.jpg", img, 0644)
 		if err != nil {
-			return defaultValue
+			return nil, err
 		}
 
-		return result
-	}
-	return defaultValue
-}
+		log.Printf("✅ received image %s, cal_hash=%s, imageHash=%s\n", groupId, genSha1(img), imageHash)
 
-func getEnvString(key string, defaultValue string) string {
-	value := os.Getenv(key)
-	if len(value) != 0 {
-		return value
+		return true, nil
 	}
-	return defaultValue
+
+	return false, nil
 }
 
 func genSha1(buf []byte) string {
 	h := sha1.New()
 	h.Write(buf)
 	return fmt.Sprintf("%x", h.Sum(nil))
-}
-
-func main() {
-	cli, err := client.NewServerless("image-recognition").Connect(zipperHost, zipperPort)
-	if err != nil {
-		log.Print("❌ Connect to zipper failure: ", err)
-		return
-	}
-
-	defer cli.Close()
-	cli.Pipe(Handler)
 }
