@@ -8,34 +8,39 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"strconv"
+	"strings"
 	"time"
 
-	"github.com/yomorun/y3-codec-golang"
+	"github.com/google/uuid"
 
 	"github.com/yomorun/yomo/pkg/client"
+
+	"github.com/yomorun/y3-codec-golang"
 )
 
 var (
-	zipperHost = getEnvString("YOMO_ZIPPER_HOST", "localhost")
-	zipperPort = getEnvInt("YOMO_ZIPPER_Port", 9000)
-	codec      = y3.NewCodec(0x10)
+	codec   = y3.NewCodec(0x10)
+	coder64 = base64.NewEncoding("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
 )
 
-const base64Table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+const (
+	packetSize = 1024
+)
 
-var coder = base64.NewEncoding(base64Table)
-
-//func Base64Encode(encode_byte []byte) []byte {
-//	return []byte(coder.EncodeToString(encode_byte))
-//}
+type ImageData struct {
+	ImageID       string `y3:"0x12"`
+	ImageHash     string `y3:"0x13"`
+	PacketCount   int64  `y3:"0x14"`
+	PacketId      int64  `y3:"0x15"`
+	PacketContent string `y3:"0x17"`
+}
 
 func main() {
 	fmt.Println("Go: Args:", os.Args)
 	filePath := os.Args[1]
 
 	// connect to yomo-zipper.
-	cli, err := client.NewSource("image-recognition-source").Connect(zipperHost, zipperPort)
+	cli, err := client.NewSource("image-recognition-source").Connect("localhost", 9000)
 	if err != nil {
 		log.Printf("❌ Emit the data to yomo-zipper failure with err: %v", err)
 		return
@@ -46,51 +51,66 @@ func main() {
 }
 
 func loadImageAndSendData(stream io.Writer, filePath string) {
-	// load image.
-	img, _ := ioutil.ReadFile(filePath)
-
 	for {
-		// encode image.
-		img64 := coder.EncodeToString(img)
+		// load image data
+		img, _ := ioutil.ReadFile(filePath)
+		img64 := coder64.EncodeToString(img)
+		groups := split([]rune(img64), int64(len(img64)/packetSize))
 
-		fmt.Printf("img64=%v\n", img64)
-		sendingBuf, _ := codec.Marshal(img64)
+		count := len(groups)
+		data := ImageData{
+			ImageID:     genUUID(),
+			ImageHash:   genSha1(img),
+			PacketCount: int64(count),
+		}
 
-		// end data via QUIC stream.
-		_, err := stream.Write(sendingBuf)
-		if err != nil {
-			log.Printf("❌ Send %v to yomo-zipper failure with err: %v", filePath, err)
-		} else {
-			log.Printf("✅ Send %v to yomo-zipper, hash=%s, img64_size=%v", filePath, genSha1(img), len(img64))
+		// send data via QUIC stream.
+		for i := 0; i < count; i++ {
+			r := groups[i]
+			data.PacketId = int64(i)
+			data.PacketContent = string(r)
+
+			sendingBuf, _ := codec.Marshal(data)
+			_, err := stream.Write(sendingBuf)
+			if err != nil {
+				log.Printf("❌ Send %v [%v] to yomo-zipper failure with err: %v", data.ImageID, i, err)
+			} else {
+				log.Printf("✅ Send %v [%v] to yomo-zipper, ContentSize=%v, ImageHash=%v",
+					data.ImageID, i, len(data.PacketContent), data.ImageHash)
+			}
+			time.Sleep(1 * time.Millisecond)
 		}
 
 		time.Sleep(2 * time.Second)
 	}
 }
 
-func getEnvInt(key string, defaultValue int) int {
-	value := os.Getenv(key)
-	if len(value) != 0 {
-		result, err := strconv.Atoi(value)
-		if err != nil {
-			return defaultValue
-		}
-
-		return result
-	}
-	return defaultValue
-}
-
-func getEnvString(key string, defaultValue string) string {
-	value := os.Getenv(key)
-	if len(value) != 0 {
-		return value
-	}
-	return defaultValue
-}
-
 func genSha1(buf []byte) string {
 	h := sha1.New()
 	h.Write(buf)
 	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func genUUID() string {
+	return strings.Replace(uuid.New().String(), "-", "", -1)
+}
+
+func split(runes []rune, num int64) [][]rune {
+	max := int64(len(runes))
+	if max < num {
+		return nil
+	}
+	var segments = make([][]rune, 0)
+	quantity := max / num
+	end := int64(0)
+	for i := int64(1); i <= num; i++ {
+		qu := i * quantity
+		if i != num {
+			segments = append(segments, runes[i-1+end:qu])
+		} else {
+			segments = append(segments, runes[i-1+end:])
+		}
+		end = qu - i
+	}
+	return segments
 }
