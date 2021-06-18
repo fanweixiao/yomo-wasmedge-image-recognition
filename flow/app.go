@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"sync"
 
 	"github.com/yomorun/yomo/pkg/client"
 
@@ -15,23 +14,10 @@ import (
 )
 
 var (
-	m   = map[string][]ImageData{}
-	mux sync.Mutex
-
 	coder64 = base64.NewEncoding("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
 )
 
-const (
-	ImageDataKey = 0x10
-)
-
-type ImageData struct {
-	ImageID       string `y3:"0x12"`
-	ImageHash     string `y3:"0x13"`
-	PacketCount   int64  `y3:"0x14"`
-	PacketId      int64  `y3:"0x15"`
-	PacketContent string `y3:"0x17"`
-}
+const ImageDataKey = 0x10
 
 func main() {
 	cli, err := client.NewServerless("image-recognition").Connect("localhost", 9000)
@@ -44,8 +30,8 @@ func main() {
 	cli.Pipe(Handler)
 }
 
-func Handler(rxstream rx.RxStream) rx.RxStream {
-	stream := rxstream.
+func Handler(rxStream rx.RxStream) rx.RxStream {
+	stream := rxStream.
 		Subscribe(ImageDataKey).
 		OnObserve(decode).
 		Encode(0x11)
@@ -54,55 +40,26 @@ func Handler(rxstream rx.RxStream) rx.RxStream {
 }
 
 var decode = func(v []byte) (interface{}, error) {
-	mux.Lock()
-	defer mux.Unlock()
-
-	// parse ImageData
-	var mold ImageData
-	err := y3.ToObject(v, &mold)
+	img64, err := y3.ToUTF8String(v)
 	if err != nil {
 		return nil, err
 	}
 
-	// gather packages
-	dataArray, ok := m[mold.ImageID]
-	if ok == false {
-		dataArray = make([]ImageData, 0)
-		dataArray = append(dataArray, mold)
-		m[mold.ImageID] = dataArray
-	} else {
-		dataArray = append(dataArray, mold)
-		m[mold.ImageID] = dataArray
+	img, err := coder64.DecodeString(img64)
+	if err != nil {
+		return nil, err
 	}
 
-	packetCount := dataArray[0].PacketCount
-
-	if int64(len(dataArray)) == packetCount {
-		groupId := dataArray[0].ImageID
-		imageHash := dataArray[0].ImageHash
-
-		// combine packages
-		img64 := ""
-		for _, item := range dataArray {
-			img64 += item.PacketContent
-		}
-		delete(m, groupId)
-
-		// restore image
-		img, err := coder64.DecodeString(img64)
-
-		//create file
-		err = ioutil.WriteFile("./temp.jpg", img, 0644)
-		if err != nil {
-			return nil, err
-		}
-
-		log.Printf("✅ received image %s, cal_hash=%s, imageHash=%s\n", groupId, genSha1(img), imageHash)
-
-		return true, nil
+	//create file
+	err = ioutil.WriteFile(fmt.Sprintf("./.out/%s.jpg", genSha1(img)), img, 0644)
+	if err != nil {
+		return nil, err
 	}
 
-	return false, nil
+	hash := genSha1(img)
+	log.Printf("✅ received image hash %v, img64_size=%d \n", hash, len(img64))
+
+	return hash, nil
 }
 
 func genSha1(buf []byte) string {
