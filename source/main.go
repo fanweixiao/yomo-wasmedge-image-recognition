@@ -1,39 +1,30 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
-	"strings"
+	"strconv"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/disintegration/imaging"
 
 	"github.com/yomorun/yomo/pkg/client"
 
 	"github.com/yomorun/y3-codec-golang"
+
+	ffmpeg "github.com/u2takey/ffmpeg-go"
 )
 
 var (
 	codec   = y3.NewCodec(0x10)
 	coder64 = base64.NewEncoding("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
 )
-
-const (
-	packetSize = 1024
-)
-
-type ImageData struct {
-	ImageID       string `y3:"0x12"`
-	ImageHash     string `y3:"0x13"`
-	PacketCount   int64  `y3:"0x14"`
-	PacketId      int64  `y3:"0x15"`
-	PacketContent string `y3:"0x17"`
-}
 
 func main() {
 	fmt.Println("Go: Args:", os.Args)
@@ -47,42 +38,38 @@ func main() {
 	}
 	defer cli.Close()
 
-	loadImageAndSendData(cli, filePath)
+	loadVideoAndSendData(cli, filePath)
 }
 
-func loadImageAndSendData(stream io.Writer, filePath string) {
-	for {
-		// load image data
-		img, _ := ioutil.ReadFile(filePath)
+func loadVideoAndSendData(stream io.Writer, filePath string) {
+	send := func(id int, img []byte) {
 		img64 := coder64.EncodeToString(img)
-		groups := split([]rune(img64), int64(len(img64)/packetSize))
-
-		count := len(groups)
-		data := ImageData{
-			ImageID:     genUUID(),
-			ImageHash:   genSha1(img),
-			PacketCount: int64(count),
-		}
+		sendingBuf, _ := codec.Marshal(img64)
 
 		// send data via QUIC stream.
-		for i := 0; i < count; i++ {
-			r := groups[i]
-			data.PacketId = int64(i)
-			data.PacketContent = string(r)
-
-			sendingBuf, _ := codec.Marshal(data)
-			_, err := stream.Write(sendingBuf)
-			if err != nil {
-				log.Printf("❌ Send %v [%v] to yomo-zipper failure with err: %v", data.ImageID, i, err)
-			} else {
-				log.Printf("✅ Send %v [%v] to yomo-zipper, ContentSize=%v, ImageHash=%v",
-					data.ImageID, i, len(data.PacketContent), data.ImageHash)
-			}
-			time.Sleep(1 * time.Millisecond)
+		_, err := stream.Write(sendingBuf)
+		if err != nil {
+			log.Printf("❌ Send image-%v of %s to yomo-zipper failure with err: %v", id, filePath, err)
+		} else {
+			log.Printf("✅ Send image-%v of %s to yomo-zipper, hash=%s, img64_size=%v", id, filePath, genSha1(img), len(img64))
 		}
-
-		time.Sleep(2 * time.Second)
+		time.Sleep(1 * time.Millisecond)
 	}
+
+	// load video and convert to images
+	video := VideoImage{}
+	num, _ := video.GetFrameCount(filePath)
+	ffStream := ffmpeg.Input(filePath)
+	for i := 0; i < num; i++ {
+		img, err := video.ExtractImageBytes(ffStream, i)
+		if err != nil {
+			fmt.Printf("ExtractImage64 error: %v\n", err)
+		}
+		send(i, img)
+	}
+
+	fmt.Printf("Successfully sent %d images\n", num)
+	time.Sleep(5 * time.Second)
 }
 
 func genSha1(buf []byte) string {
@@ -91,26 +78,63 @@ func genSha1(buf []byte) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-func genUUID() string {
-	return strings.Replace(uuid.New().String(), "-", "", -1)
+type VideoImage struct {
 }
 
-func split(runes []rune, num int64) [][]rune {
-	max := int64(len(runes))
-	if max < num {
-		return nil
+func (v *VideoImage) ExtractImageBytes(stream *ffmpeg.Stream, frameNum int) ([]byte, error) {
+	reader := v.extractImage(stream, frameNum)
+	img, err := imaging.Decode(reader)
+	if err != nil {
+		return nil, err
 	}
-	var segments = make([][]rune, 0)
-	quantity := max / num
-	end := int64(0)
-	for i := int64(1); i <= num; i++ {
-		qu := i * quantity
-		if i != num {
-			segments = append(segments, runes[i-1+end:qu])
-		} else {
-			segments = append(segments, runes[i-1+end:])
+	imgBuf := new(bytes.Buffer)
+	err = imaging.Encode(imgBuf, img, imaging.JPEG)
+	if err != nil {
+		return nil, err
+	}
+	return imgBuf.Bytes(), nil
+}
+
+func (v *VideoImage) extractImage(stream *ffmpeg.Stream, frameNum int) io.Reader {
+	buf := bytes.NewBuffer(nil)
+	err := stream.
+		Filter("select", ffmpeg.Args{fmt.Sprintf("gte(n,%d)", frameNum)}).
+		Output("pipe:", ffmpeg.KwArgs{"vframes": 1, "format": "image2", "vcodec": "mjpeg"}).
+		//WithOutput(buf, os.Stdout).
+		WithOutput(buf, nil).
+		Run()
+	if err != nil {
+		panic(err)
+	}
+	return buf
+}
+
+func (v *VideoImage) GetFrameCount(inFileName string) (int, error) {
+	data, _ := ffmpeg.Probe(inFileName)
+	var m map[string]interface{}
+	err := json.Unmarshal([]byte(data), &m)
+	if err != nil {
+		return 0, err
+	}
+
+	var strInt string
+	items := m["streams"].([]interface{})
+	for _, item := range items {
+		v := item.(map[string]interface{})
+		if v["profile"] == "Main" {
+			strInt = v["nb_frames"].(string)
+			break
 		}
-		end = qu - i
 	}
-	return segments
+
+	if len(strInt) == 0 {
+		return 0, fmt.Errorf("not find profile(Main).nb_frames")
+	}
+
+	num, err := strconv.Atoi(strInt)
+	if err != nil {
+		return 0, nil
+	}
+
+	return num, nil
 }
